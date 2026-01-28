@@ -54,8 +54,14 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   end
 
   def validate_provider_config?
+    # First try message_templates (original validation)
     response = HTTParty.get("#{business_account_path}/message_templates?access_token=#{whatsapp_channel.provider_config['api_key']}")
-    response.success?
+    return true if response.success?
+
+    # Fallback: try to fetch WABA details (works with embedded signup tokens)
+    # Some tokens from embedded signup may not have message_templates permission
+    waba_response = HTTParty.get("#{business_account_path}?access_token=#{whatsapp_channel.provider_config['api_key']}")
+    waba_response.success?
   end
 
   def api_headers
