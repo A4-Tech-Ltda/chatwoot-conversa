@@ -15,6 +15,14 @@ const filterTypes = [
     attributeModel: 'standard',
   },
   {
+    attributeKey: 'labels',
+    attributeI18nKey: 'LABELS',
+    inputType: 'multi_select',
+    dataType: 'text',
+    filterOperators: OPERATOR_TYPES_2,
+    attributeModel: 'standard',
+  },
+  {
     attributeKey: 'assignee_id',
     attributeI18nKey: 'ASSIGNEE_NAME',
     inputType: 'search_select',
@@ -59,14 +67,6 @@ const filterTypes = [
     attributeI18nKey: 'CAMPAIGN_NAME',
     inputType: 'search_select',
     dataType: 'Number',
-    filterOperators: OPERATOR_TYPES_2,
-    attributeModel: 'standard',
-  },
-  {
-    attributeKey: 'labels',
-    attributeI18nKey: 'LABELS',
-    inputType: 'multi_select',
-    dataType: 'text',
     filterOperators: OPERATOR_TYPES_2,
     attributeModel: 'standard',
   },
@@ -130,6 +130,10 @@ export const filterAttributeGroups = [
         i18nKey: 'STATUS',
       },
       {
+        key: 'labels',
+        i18nKey: 'LABELS',
+      },
+      {
         key: 'assignee_id',
         i18nKey: 'ASSIGNEE_NAME',
       },
@@ -148,10 +152,6 @@ export const filterAttributeGroups = [
       {
         key: 'campaign_id',
         i18nKey: 'CAMPAIGN_NAME',
-      },
-      {
-        key: 'labels',
-        i18nKey: 'LABELS',
       },
       {
         key: 'created_at',

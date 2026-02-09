@@ -117,6 +117,30 @@ export function useConversationFilterContext() {
       attributeModel: 'standard',
     },
     {
+      attributeKey: CONVERSATION_ATTRIBUTES.LABELS,
+      value: CONVERSATION_ATTRIBUTES.LABELS,
+      attributeName: t('FILTER.ATTRIBUTES.LABELS'),
+      label: t('FILTER.ATTRIBUTES.LABELS'),
+      inputType: 'multiSelect',
+      options: labels.value.map(label => {
+        return {
+          id: label.title,
+          name: label.title,
+          icon: h('span', {
+            class: `rounded-full`,
+            style: {
+              backgroundColor: label.color,
+              height: '6px',
+              width: '6px',
+            },
+          }),
+        };
+      }),
+      dataType: 'text',
+      filterOperators: presenceOperators.value,
+      attributeModel: 'standard',
+    },
+    {
       attributeKey: CONVERSATION_ATTRIBUTES.ASSIGNEE_ID,
       value: CONVERSATION_ATTRIBUTES.ASSIGNEE_ID,
       attributeName: t('FILTER.ATTRIBUTES.ASSIGNEE_NAME'),
@@ -180,30 +204,6 @@ export function useConversationFilterContext() {
         name: campaign.title,
       })),
       dataType: 'number',
-      filterOperators: presenceOperators.value,
-      attributeModel: 'standard',
-    },
-    {
-      attributeKey: CONVERSATION_ATTRIBUTES.LABELS,
-      value: CONVERSATION_ATTRIBUTES.LABELS,
-      attributeName: t('FILTER.ATTRIBUTES.LABELS'),
-      label: t('FILTER.ATTRIBUTES.LABELS'),
-      inputType: 'multiSelect',
-      options: labels.value.map(label => {
-        return {
-          id: label.title,
-          name: label.title,
-          icon: h('span', {
-            class: `rounded-full`,
-            style: {
-              backgroundColor: label.color,
-              height: '6px',
-              width: '6px',
-            },
-          }),
-        };
-      }),
-      dataType: 'text',
       filterOperators: presenceOperators.value,
       attributeModel: 'standard',
     },
