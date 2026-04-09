@@ -14,6 +14,7 @@ import { requiredIf } from '@vuelidate/validators';
 import { useI18n } from 'vue-i18n';
 
 import Input from 'dashboard/components-next/input/Input.vue';
+import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import {
   buildTemplateParameters,
   allKeysRequired,
@@ -42,6 +43,27 @@ const emit = defineEmits(['sendMessage', 'resetTemplate', 'back']);
 const { t } = useI18n();
 
 const processedParams = ref({});
+const variableSourceMap = ref({});
+
+const variableSourceOptions = [
+  { value: 'fixed', label: 'Texto fixo' },
+  { value: 'contact.name', label: 'Nome do contato' },
+  { value: 'contact.last_name', label: 'Sobrenome do contato' },
+  { value: 'contact.email', label: 'Email do contato' },
+  { value: 'contact.phone_number', label: 'Telefone do contato' },
+  { value: 'contact.identifier', label: 'Identificador do contato' },
+  { value: 'contact.company', label: 'Empresa do contato' },
+  { value: 'contact.city', label: 'Cidade do contato' },
+];
+
+const handleSourceChange = (key, value) => {
+  variableSourceMap.value[key] = value;
+  if (value === 'fixed') {
+    processedParams.value.body[key] = '';
+  } else {
+    processedParams.value.body[key] = `{{${value}}}`;
+  }
+};
 
 const languageLabel = computed(() => {
   return `${t('WHATSAPP_TEMPLATES.PARSER.LANGUAGE')}: ${props.template.language || DEFAULT_LANGUAGE}`;
@@ -92,8 +114,12 @@ const isFormInvalid = computed(() => {
   }
 
   if (hasVariables.value && processedParams.value.body) {
-    const hasEmptyBodyVariable = Object.values(processedParams.value.body).some(
-      value => !value
+    const hasEmptyBodyVariable = Object.entries(processedParams.value.body).some(
+      ([key, value]) => {
+        // Dynamic contact fields are always valid
+        if (variableSourceMap.value[key] && variableSourceMap.value[key] !== 'fixed') return false;
+        return !value;
+      }
     );
     if (hasEmptyBodyVariable) return true;
   }
@@ -257,17 +283,24 @@ defineExpose({
         <div
           v-for="(variable, key) in processedParams.body"
           :key="`body-${key}`"
-          class="flex items-center mb-2.5"
+          class="flex flex-col gap-1.5 mb-3"
         >
+          <label class="text-xs font-medium text-n-slate-11">
+            {{ t('WHATSAPP_TEMPLATES.PARSER.VARIABLE_PLACEHOLDER', { variable: key }) }}
+          </label>
+          <ComboBox
+            :model-value="variableSourceMap[key] || 'fixed'"
+            :options="variableSourceOptions"
+            placeholder="Selecione o valor"
+            class="[&>div>button]:bg-n-alpha-black2 [&>div>button:not(.focused)]:dark:outline-n-weak [&>div>button:not(.focused)]:hover:!outline-n-slate-6"
+            @update:model-value="handleSourceChange(key, $event)"
+          />
           <Input
+            v-if="!variableSourceMap[key] || variableSourceMap[key] === 'fixed'"
             v-model="processedParams.body[key]"
             type="text"
-            class="flex-1"
-            :placeholder="
-              t('WHATSAPP_TEMPLATES.PARSER.VARIABLE_PLACEHOLDER', {
-                variable: key,
-              })
-            "
+            class="w-full"
+            placeholder="Digite o valor fixo"
           />
         </div>
       </div>

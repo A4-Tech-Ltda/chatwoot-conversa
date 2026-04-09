@@ -20,10 +20,23 @@ export const allKeysRequired = value => {
   return keys.every(key => value[key]);
 };
 
+const CONTACT_FIELD_PREVIEW = {
+  '{{contact.name}}': '[Nome]',
+  '{{contact.last_name}}': '[Sobrenome]',
+  '{{contact.email}}': '[Email]',
+  '{{contact.phone_number}}': '[Telefone]',
+  '{{contact.identifier}}': '[Identificador]',
+  '{{contact.company}}': '[Empresa]',
+  '{{contact.city}}': '[Cidade]',
+};
+
 export const replaceTemplateVariables = (templateText, processedParams) => {
   return templateText.replace(/{{([^}]+)}}/g, (match, variable) => {
     const variableKey = processVariable(variable);
-    return processedParams.body?.[variableKey] || `{{${variable}}}`;
+    const value = processedParams.body?.[variableKey];
+    if (!value) return `{{${variable}}}`;
+    // Show friendly preview for dynamic contact fields
+    return CONTACT_FIELD_PREVIEW[value] || value;
   });
 };
 

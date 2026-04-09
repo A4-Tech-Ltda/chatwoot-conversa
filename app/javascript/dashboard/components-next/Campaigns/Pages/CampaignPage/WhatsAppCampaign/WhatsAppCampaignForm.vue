@@ -30,6 +30,7 @@ const initialState = {
   templateId: null,
   scheduledAt: null,
   selectedAudience: [],
+  createConversations: false,
 };
 
 const state = reactive({ ...initialState });
@@ -149,6 +150,9 @@ const prepareCampaignDetails = () => {
       id,
       type: 'Label',
     })),
+    trigger_rules: {
+      create_conversations: state.createConversations,
+    },
   };
 };
 
@@ -244,6 +248,20 @@ watch(
       :message="formErrors.scheduledAt"
       :message-type="formErrors.scheduledAt ? 'error' : 'info'"
     />
+
+    <label class="flex items-center gap-2 cursor-pointer">
+      <input
+        v-model="state.createConversations"
+        type="checkbox"
+        class="w-4 h-4 rounded border-n-weak text-n-blue-text focus:ring-n-blue-text"
+      />
+      <span class="text-sm text-n-slate-12">
+        Criar conversas ao enviar
+      </span>
+      <span class="text-xs text-n-slate-11">
+        (mensagens aparecem no inbox)
+      </span>
+    </label>
 
     <div class="flex gap-3 justify-between items-center w-full">
       <Button
