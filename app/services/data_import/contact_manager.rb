@@ -1,11 +1,17 @@
 class DataImport::ContactManager
   def initialize(account)
     @account = account
+    @pending_labels = {} # contact object_id => label string
   end
 
+  attr_reader :pending_labels
+
   def build_contact(params)
+    # Extract label before building contact (not a contact attribute)
+    label = params.delete(:label)&.strip.presence
     contact = find_or_initialize_contact(params)
     update_contact_attributes(params, contact)
+    @pending_labels[contact.object_id] = label if label
     contact
   end
 
@@ -63,6 +69,6 @@ class DataImport::ContactManager
     contact.additional_attributes ||= {}
     contact.additional_attributes[:company] = params[:company] if params[:company].present?
     contact.additional_attributes[:city] = params[:city] if params[:city].present?
-    contact.assign_attributes(custom_attributes: contact.custom_attributes.merge(params.except(:identifier, :email, :name, :phone_number)))
+    contact.assign_attributes(custom_attributes: contact.custom_attributes.merge(params.except(:identifier, :email, :name, :phone_number, :label)))
   end
 end

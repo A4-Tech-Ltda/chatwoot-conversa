@@ -56,23 +56,18 @@ const fetchLabels = async contactId => {
 
 const handleLabelAction = async ({ value }) => {
   try {
-    // Get current label titles
     const currentLabels = savedLabels.value.map(label => label.title);
-
-    // Find the label title for the ID (value)
     const selectedLabel = allLabels.value.find(label => label.id === value);
     if (!selectedLabel) return;
 
     let updatedLabels;
 
-    // If label is already selected, remove it (toggle behavior)
+    // If label is already selected, remove it (toggle off)
     if (currentLabels.includes(selectedLabel.title)) {
-      updatedLabels = currentLabels.filter(
-        labelTitle => labelTitle !== selectedLabel.title
-      );
+      updatedLabels = [];
     } else {
-      // Add the new label
-      updatedLabels = [...currentLabels, selectedLabel.title];
+      // Single-select: replace any existing label with the new one
+      updatedLabels = [selectedLabel.title];
     }
 
     await store.dispatch('contactLabels/update', {
