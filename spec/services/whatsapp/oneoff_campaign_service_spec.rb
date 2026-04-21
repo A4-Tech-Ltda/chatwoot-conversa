@@ -28,6 +28,18 @@ describe Whatsapp::OneoffCampaignService do
     stub_request(:post, /graph\.facebook\.com.*messages/)
       .to_return(status: 200, body: { messages: [{ id: 'message_id_123' }] }.to_json, headers: { 'Content-Type' => 'application/json' })
 
+    # Envs necessárias pro pré-check de saldo (MKT-25)
+    ENV['PLATFORM_INTERNAL_URL'] = 'http://platform.test'
+    ENV['PLATFORM_API_KEY'] = 'test-platform-key'
+
+    # Stub default: saldo OK. Cada context sobrescreve se precisar.
+    stub_request(:post, 'http://platform.test/api/internal/waba-billing/precheck')
+      .to_return(
+        status: 200,
+        body: { allowed: true, required_credits: 0.0, available_credits: 100.0 }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
     # Ensure the service uses our mocked channel object by stubbing the whole delegation chain
     # Using allow_any_instance_of here because the service is instantiated within individual tests
     # and we need to mock the delegated channel method for proper test isolation
@@ -174,6 +186,153 @@ describe Whatsapp::OneoffCampaignService do
 
         described_class.new(campaign: campaign).perform
         expect(campaign.reload.completed?).to be true
+      end
+    end
+
+    # MKT-25 / Task 9 — pré-check de saldo antes de disparar campanha WhatsApp.
+    context 'when billing precheck is performed' do
+      let(:precheck_url) { 'http://platform.test/api/internal/waba-billing/precheck' }
+      let!(:contact) do
+        create(:contact, :with_phone_number, account: account).tap { |c| c.update_labels([label1.title]) }
+      end
+
+      context 'when platform returns 200 allowed' do
+        it 'dispatches template messages normally' do
+          expect(whatsapp_channel).to receive(:send_template).once
+
+          described_class.new(campaign: campaign).perform
+
+          expect(WebMock).to have_requested(:post, precheck_url)
+            .with(
+              headers: { 'X-Platform-Api-Key' => 'test-platform-key', 'Content-Type' => 'application/json' },
+              body: hash_including('phone_number_id' => '123456789', 'audience_size' => 1)
+            ).once
+          expect(campaign.reload.completed?).to be true
+        end
+      end
+
+      context 'when platform returns 402 not allowed (insufficient balance)' do
+        let(:user_message) do
+          'Recursos insuficientes para disparo. Comunique o seu manager (Joao Manager — joao@empresa.com).'
+        end
+
+        before do
+          stub_request(:post, precheck_url).to_return(
+            status: 402,
+            body: {
+              allowed: false,
+              required_credits: 50.0,
+              available_credits: 5.0,
+              admin_name: 'Joao Manager',
+              admin_email: 'joao@empresa.com',
+              user_message: user_message
+            }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
+        end
+
+        it 'blocks dispatch and raises with the platform user_message' do
+          expect(whatsapp_channel).not_to receive(:send_template)
+
+          expect { described_class.new(campaign: campaign).perform }
+            .to raise_error(Whatsapp::OneoffCampaignService::BillingPrecheckBlockedError) do |err|
+              expect(err.user_message).to eq(user_message)
+              expect(err.http_status).to eq(402)
+            end
+
+          campaign.reload
+          expect(campaign.completed?).to be true
+          expect(campaign.trigger_rules['precheck_error']).to include(
+            'user_message' => user_message,
+            'http_status' => '402'
+          )
+        end
+      end
+
+      context 'when platform returns 404 (agent not mapped)' do
+        before do
+          stub_request(:post, precheck_url).to_return(
+            status: 404,
+            body: { error: 'agent_not_found' }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
+        end
+
+        it 'blocks dispatch and logs a warning' do
+          expect(whatsapp_channel).not_to receive(:send_template)
+          expect(Rails.logger).to receive(:tagged).with('waba_billing_precheck').at_least(:once).and_call_original
+          expect(Rails.logger).to receive(:warn).with(/agent not mapped for phone_number_id=123456789/).at_least(:once)
+
+          expect { described_class.new(campaign: campaign).perform }
+            .to raise_error(Whatsapp::OneoffCampaignService::BillingPrecheckBlockedError) do |err|
+              expect(err.http_status).to eq(404)
+            end
+        end
+      end
+
+      context 'when platform returns 401 (unauthorized)' do
+        before do
+          stub_request(:post, precheck_url).to_return(
+            status: 401,
+            body: { error: 'invalid_api_key' }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
+        end
+
+        it 'blocks dispatch and raises a ConfigurationError' do
+          expect(whatsapp_channel).not_to receive(:send_template)
+
+          expect { described_class.new(campaign: campaign).perform }
+            .to raise_error(Whatsapp::BillingPrecheckService::ConfigurationError, /401/)
+        end
+      end
+
+      context 'when platform times out or returns 5xx (fail-closed)' do
+        it 'blocks dispatch on connection timeout' do
+          stub_request(:post, precheck_url).to_timeout
+
+          expect(whatsapp_channel).not_to receive(:send_template)
+
+          expect { described_class.new(campaign: campaign).perform }
+            .to raise_error(Whatsapp::OneoffCampaignService::BillingPrecheckBlockedError) do |err|
+              expect(err.user_message).to eq(Whatsapp::BillingPrecheckService::GENERIC_ERROR_MESSAGE)
+              expect(err.http_status).to eq(:network_error)
+            end
+        end
+
+        it 'blocks dispatch on 5xx responses' do
+          stub_request(:post, precheck_url).to_return(
+            status: 503,
+            body: { error: 'service_unavailable' }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
+
+          expect(whatsapp_channel).not_to receive(:send_template)
+
+          expect { described_class.new(campaign: campaign).perform }
+            .to raise_error(Whatsapp::OneoffCampaignService::BillingPrecheckBlockedError) do |err|
+              expect(err.user_message).to eq(Whatsapp::BillingPrecheckService::GENERIC_ERROR_MESSAGE)
+              expect(err.http_status).to eq(503)
+            end
+        end
+      end
+
+      context 'when required envs are missing' do
+        it 'raises ConfigurationError and does not dispatch' do
+          ENV['PLATFORM_INTERNAL_URL'] = nil
+          expect(whatsapp_channel).not_to receive(:send_template)
+
+          expect { described_class.new(campaign: campaign).perform }
+            .to raise_error(Whatsapp::BillingPrecheckService::ConfigurationError, /PLATFORM_INTERNAL_URL/)
+        end
+
+        it 'raises ConfigurationError when api key is missing' do
+          ENV['PLATFORM_API_KEY'] = nil
+          expect(whatsapp_channel).not_to receive(:send_template)
+
+          expect { described_class.new(campaign: campaign).perform }
+            .to raise_error(Whatsapp::BillingPrecheckService::ConfigurationError, /PLATFORM_API_KEY/)
+        end
       end
     end
   end

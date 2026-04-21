@@ -1,11 +1,26 @@
 class Whatsapp::OneoffCampaignService
+  # Raised quando o pré-check de saldo bloqueia o disparo (MKT-25).
+  # A mensagem traz o texto já formatado pelo Platform para exibição ao admin.
+  class BillingPrecheckBlockedError < StandardError
+    attr_reader :user_message, :http_status, :payload
+
+    def initialize(user_message:, http_status:, payload: nil)
+      @user_message = user_message
+      @http_status = http_status
+      @payload = payload
+      super(user_message)
+    end
+  end
+
   pattr_initialize [:campaign!]
 
   def perform
     validate_campaign!
+    audience_contacts = eligible_contacts(extract_audience_labels)
+    ensure_billing_precheck!(audience_contacts.size)
     # marks campaign completed so that other jobs won't pick it up
     campaign.completed!
-    process_audience(extract_audience_labels)
+    process_audience(audience_contacts)
   end
 
   private
@@ -65,13 +80,57 @@ class Whatsapp::OneoffCampaignService
     end
   end
 
-  def process_audience(audience_labels)
-    contacts = campaign.account.contacts.tagged_with(audience_labels, any: true)
+  def eligible_contacts(audience_labels)
+    campaign.account.contacts.tagged_with(audience_labels, any: true)
+  end
+
+  def process_audience(contacts)
     Rails.logger.info "Processing #{contacts.count} contacts for campaign #{campaign.id}"
 
     contacts.each { |contact| process_contact(contact) }
 
     Rails.logger.info "Campaign #{campaign.id} processing completed"
+  end
+
+  def ensure_billing_precheck!(audience_size)
+    phone_number_id = channel.provider_config&.dig('phone_number_id')
+
+    if phone_number_id.blank?
+      Rails.logger.error "Campaign #{campaign.id}: missing phone_number_id in provider_config — blocking dispatch"
+      raise BillingPrecheckBlockedError.new(
+        user_message: Whatsapp::BillingPrecheckService::GENERIC_ERROR_MESSAGE,
+        http_status: :missing_phone_number_id
+      )
+    end
+
+    result = Whatsapp::BillingPrecheckService.new(
+      phone_number_id: phone_number_id,
+      audience_size: audience_size
+    ).call
+
+    return if result.allowed?
+
+    persist_precheck_failure!(result)
+    raise BillingPrecheckBlockedError.new(
+      user_message: result.user_message,
+      http_status: result.http_status,
+      payload: result.payload
+    )
+  end
+
+  def persist_precheck_failure!(result)
+    # Marca a campanha como completed para não ser reprocessada pelo TriggerScheduledItemsJob
+    # e registra o motivo em trigger_rules (jsonb) para a UI exibir ao admin.
+    updated_rules = (campaign.trigger_rules || {}).deep_dup
+    updated_rules['precheck_error'] = {
+      'user_message' => result.user_message,
+      'http_status' => result.http_status.to_s,
+      'payload' => result.payload,
+      'blocked_at' => Time.current.iso8601
+    }
+    campaign.update_columns(trigger_rules: updated_rules, campaign_status: Campaign.campaign_statuses[:completed])
+  rescue StandardError => e
+    Rails.logger.error "Campaign #{campaign.id}: failed to persist precheck error: #{e.message}"
   end
 
   def create_conversations?
