@@ -77,6 +77,10 @@ const isActiveChat = computed(() => {
 
 const unreadCount = computed(() => props.chat.unread_count);
 
+// Conversa Com Agente: modo (cerebro) de IA atendendo a conversa.
+// Gravado pelo ai-engine como custom_attribute a cada handoff.
+const aiModeName = computed(() => props.chat.custom_attributes?.modo_ia || null);
+
 const hasUnread = computed(() => unreadCount.value > 0);
 
 const isInboxNameVisible = computed(() => !activeInbox.value);
@@ -367,6 +371,15 @@ const deleteConversation = () => {
           <SLACardLabel :chat="chat" class="ltr:mr-1 rtl:ml-1" />
         </template>
       </CardLabels>
+      <!-- Conversa Com Agente: modo de IA atendendo (bottom-right) -->
+      <div v-if="aiModeName" class="mx-2 mt-0.5 mb-1 flex justify-end">
+        <span
+          class="text-xxs leading-4 text-n-slate-10 truncate max-w-[60%]"
+          :title="`Modo de IA: ${aiModeName}`"
+        >
+          {{ aiModeName }}
+        </span>
+      </div>
     </div>
     <ContextMenu
       v-if="showContextMenu"
