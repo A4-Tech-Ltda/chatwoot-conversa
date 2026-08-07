@@ -567,7 +567,7 @@ DEFAULT_MODEL=openai/gpt-5.6-luna-pro   # so fallback; a fonte e system_settings
 
 ```python
 credits = cost_usd * credits_per_dollar * (1 + markup_percentage/100)
-# Hoje (2026-08-07): credits_per_dollar=60, markup=1500% (fator 16,0) → 1 USD = 960 creditos
+# Hoje (2026-08-07): credits_per_dollar=60, markup=2300% (fator 24,0) → 1 USD = 1440 creditos
 # ATENCAO: markup_percentage e SO custo de IA (token/audio). Numero de telefone
 # usa `number_markup_percentage` (50%) — dominios de preco separados no Platform
 # (calculateAiCreditsFromUSD vs calculateNumberCreditsFromUSD)
