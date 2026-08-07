@@ -450,9 +450,9 @@ Voce e o ai-engine, responsavel pelo cerebro do ConversaComAgente: o servico Fas
 - **Framework**: FastAPI 0.109+ + uvicorn
 - **DB**: asyncpg (pool 2-10) em PostgreSQL compartilhado com Platform (tabela `agents`, `knowledge_items`, etc.)
 - **HTTP**: httpx (async, http2)
-- **LLM**: OpenRouter (endpoint OpenAI-compat) — GPT-5.2, Claude Sonnet 4, Grok 4.1 Fast
+- **LLM**: OpenRouter — modelo FIXO da plataforma (`system_settings.default_agent_model`, hoje `openai/gpt-5.6-luna-pro`). Nao ha escolha por agente/modo
 - **RAG**: pgvector + embeddings `openai/text-embedding-3-small` (1536 dims)
-- **Media**: PyMuPDF + pypdf (PDF), python-docx (DOCX), Pillow (image), ElevenLabs Scribe v2 (audio)
+- **Media**: PyMuPDF + pypdf (PDF), python-docx (DOCX), Pillow (image), OpenRouter `openai/gpt-transcribe` com fallback ElevenLabs (audio)
 - **Lock**: redis (distribuido, pra concorrencia)
 - **Config**: pydantic-settings (`.env`)
 - **Log**: structlog (JSON)
@@ -498,7 +498,7 @@ ai-engine/
       models.py                → Attachment, ProcessedMedia, MediaType
       handlers/
         image.py               → magic-byte MIME detection → Claude vision
-        audio.py               → ElevenLabs Scribe v2 (batch STT)
+        audio.py               → OpenRouter gpt-transcribe (primario, custo real) + fallback ElevenLabs
         document.py            → PyMuPDF / python-docx / TXT, limit 12000 chars
     services/
       credits.py               → calculate_credits_from_actual_cost (cache TTL 300s)
@@ -535,7 +535,7 @@ ai-engine/
 ### Copilot Runtime
 1. `POST /copilot/process` com X-API-Key + payload (message history + creator_id)
 2. `McpClient.list_tools()` → `GET {PLATFORM_URL}/mcp/copilot` (fetch 19 schemas do Laravel)
-3. Stream OpenRouter (modelo `openai/gpt-5.2`, max_tokens 8192, max_iter 10)
+3. Stream OpenRouter (mesmo modelo fixo dos agentes, via `default_agent_model`; max_tokens 8192, max_iter 10)
 4. Tool call → `McpClient.call_tool(name, params)` → `POST /mcp/copilot` com `X-API-Key` + `X-Creator-Id` + `Host: conversacomagente.com.br`
 5. SSE events: `text_delta`, `text_complete`, `tool_start`, `tool_complete`, `navigation`, `refresh`, `usage`, `error`
 
@@ -560,14 +560,17 @@ PLATFORM_API_KEY=dev-secret-key
 OPENROUTER_API_KEY=sk-or-xxx
 ELEVENLABS_API_KEY=xxx
 LARAVEL_APP_KEY=base64:xxx                # pra decriptar campos do DB
-DEFAULT_MODEL=anthropic/claude-sonnet-4-20250514
+DEFAULT_MODEL=openai/gpt-5.6-luna-pro   # so fallback; a fonte e system_settings.default_agent_model
 ```
 
 ## Credits (services/credits.py)
 
 ```python
 credits = cost_usd * credits_per_dollar * (1 + markup_percentage/100)
-# Defaults: credits_per_dollar=60.0, markup=50% → 1 USD = 90 credits
+# Hoje: credits_per_dollar=60, markup=1250% (fator 13,5) → 1 USD = 810 creditos
+# ATENCAO: markup_percentage e SO custo de IA (token/audio). Numero de telefone
+# usa `number_markup_percentage` (50%) — dominios de preco separados no Platform
+# (calculateAiCreditsFromUSD vs calculateNumberCreditsFromUSD)
 ```
 
 Config carregada do `system_settings` do Platform (cache TTL 300s, `get_credit_settings()` pra forcar refresh).
@@ -575,7 +578,7 @@ Config carregada do `system_settings` do Platform (cache TTL 300s, `get_credit_s
 Fontes de custo:
 - **Chat**: `usage.cost` do OpenRouter (extraido em `base.py:~200`)
 - **Embeddings**: `usage.cost` do OpenRouter embeddings
-- **Audio**: duracao via word timestamps × `ELEVENLABS_STT_COST_PER_MINUTE = 0.00667`
+- **Audio**: `usage.cost` REAL do OpenRouter (gpt-transcribe). So o fallback ElevenLabs estima por duracao × `ELEVENLABS_STT_COST_PER_MINUTE`
 
 Callback pro Platform: `POST /api/internal/credits/deduct` com `X-Platform-Api-Key`.
 
